@@ -29,6 +29,9 @@
     tier: 2
     hudOffset: 0,0.19
     unlockAt: 300 # 5 minutes
+  - type: XenoEvolutionCapped
+    id: RMCXenoCarrierBase
+    max: 3
   - type: XenoHeavy
   - type: XenoDevolve
     devolvesTo:
