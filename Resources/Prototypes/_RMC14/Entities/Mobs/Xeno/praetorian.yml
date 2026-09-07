@@ -161,6 +161,7 @@
     - RMCGuideRoleValkyrie
   - type: Sprite
     sprite: _RMC14/Mobs/Xenonids/Praetorian/valkyrie_praetorian.rsi
+    
   - type: Xeno
     actionIds:
     - ActionXenoRest
@@ -232,7 +233,7 @@
   - type: Sprite
     sprite: _RMC14/Mobs/Xenonids/Praetorian/dancer_praetorian.rsi
   - type: XenoRegen
-    critHealMultiplier: 0.4455  # 35% increased regeneration
+    critHealMultiplier: 0.4455
     standHealingMultiplier: 0.567
     restHealMultiplier: 1.35
   - type: XenoCappedPheromones
@@ -354,6 +355,9 @@
     name: rmc-xeno-oppressor-name
     description: rmc-xeno-oppressor-description
     popup: rmc-xeno-oppressor-popup
+  - type: XenoEvolutionCapped
+    id: RMCXenoPraetorianOppressor
+    max: 2
   - type: MovementSpeedModifier
     baseWalkSpeed: 2.2
     baseSprintSpeed: 3.5

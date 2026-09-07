@@ -16,6 +16,9 @@
     - RMCGuideRoleBoiler
   - type: Sprite
     sprite: _RMC14/Mobs/Xenonids/Boiler/boiler.rsi
+  - type: XenoEvolutionCapped
+    id: RMCXenoBoiler
+    max: 3
   - type: Fixtures
     fixtures:
       fix1:
@@ -154,7 +157,7 @@
       sprite: /Textures/_RMC14/Interface/map_blips.rsi
       state: boiler
   - type: Flammable
-    damage: #per second, scales with number of fire 'stacks'
+    damage:
       types:
         Heat: 3
   - type: XenoToggleChargingKnockback

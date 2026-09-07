@@ -5,6 +5,7 @@ using Content.Shared._RMC14.Line;
 using Content.Shared._RMC14.Pulling;
 using Content.Shared._RMC14.Slow;
 using Content.Shared._RMC14.Stun;
+using Content.Shared._RMC14.Xenonids.AbilityVulnerability;
 using Content.Shared._RMC14.Xenonids.Hook;
 using Content.Shared._RMC14.Xenonids.Plasma;
 using Content.Shared.Actions;
@@ -46,6 +47,7 @@ public sealed partial class XenoAbductSystem : EntitySystem
     [Dependency] private readonly SharedStunSystem _stun = default!;
     [Dependency] private readonly SharedTransformSystem _transform = default!;
     [Dependency] private readonly XenoSystem _xeno = default!;
+    [Dependency] private readonly XenoAbilityVulnerabilitySystem _vulnerability = default!;
 
     private readonly HashSet<EntityUid> _abductEnts = new();
 
@@ -93,6 +95,7 @@ public sealed partial class XenoAbductSystem : EntitySystem
 
         if (_doafter.TryStartDoAfter(doAfter))
         {
+            _vulnerability.Start(xeno);
             _stun.TrySlowdown(xeno, xeno.Comp.DoafterTime, false, 0f, 0f);
 
             if (_net.IsClient)
@@ -110,6 +113,8 @@ public sealed partial class XenoAbductSystem : EntitySystem
 
     private void OnXenoAbductDoafter(Entity<XenoAbductComponent> xeno, ref XenoAbductDoAfterEvent args)
     {
+        _vulnerability.Stop(xeno);
+
         if (args.Cancelled || args.Handled)
         {
             _popup.PopupClient(Loc.GetString("rmc-xeno-abduct-cancel"), xeno, xeno, PopupType.Medium);
@@ -133,7 +138,6 @@ public sealed partial class XenoAbductSystem : EntitySystem
 
         var hookEnt = (xeno.Owner, hook);
 
-        //The fun part
         List<EntityUid> targets = new();
 
         foreach (var tile in xeno.Comp.Tiles)
@@ -143,10 +147,6 @@ public sealed partial class XenoAbductSystem : EntitySystem
 
             foreach (var ent in _abductEnts)
             {
-                //Can't grab if:
-                //Not human, not harmable
-                //Dead, Incapacitated, stunned, or big
-                //Incapacitated includes dead and crit
                 if (HasComp<StunnedComponent>(ent) ||
                     !_xeno.CanAbilityAttackTarget(xeno, ent) ||
                     _mob.IsCritical(ent) ||
@@ -161,7 +161,6 @@ public sealed partial class XenoAbductSystem : EntitySystem
         }
 
         CleanUpTiles(xeno);
-        //Pull em in
         string popupMsg = Loc.GetString("rmc-xeno-abduct-none");
         _audio.PlayPvs(xeno.Comp.Sound, xeno);
 
@@ -205,8 +204,6 @@ public sealed partial class XenoAbductSystem : EntitySystem
                 var target = _transform.GetMoverCoordinates(ent);
                 if (!origin.TryDistance(EntityManager, target, out var dis))
                     return;
-
-                //TODO RMC14 Camera shake
 
                 _slow.TrySlowdown(ent, slowTime, ignoreDurationModifier: true);
                 _slow.TryRoot(ent, _xeno.TryApplyXenoDebuffMultiplier(ent, rootTime));

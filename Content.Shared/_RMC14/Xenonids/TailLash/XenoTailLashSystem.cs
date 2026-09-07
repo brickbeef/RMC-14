@@ -4,6 +4,7 @@ using Content.Shared._RMC14.Damage;
 using Content.Shared._RMC14.Pulling;
 using Content.Shared._RMC14.Slow;
 using Content.Shared._RMC14.Stun;
+using Content.Shared._RMC14.Xenonids.AbilityVulnerability;
 using Content.Shared._RMC14.Xenonids.Plasma;
 using Content.Shared._RMC14.Xenonids.Sweep;
 using Content.Shared._RMC14.Xenonids.TailLash;
@@ -39,6 +40,7 @@ public sealed class XenoTailLashSystem : EntitySystem
     [Dependency] private readonly RMCSlowSystem _slow = default!;
     [Dependency] private readonly SharedStunSystem _stun = default!;
     [Dependency] private readonly RMCPullingSystem _pulling = default!;
+    [Dependency] private readonly XenoAbilityVulnerabilitySystem _vulnerability = default!;
 
     public override void Initialize()
     {
@@ -57,14 +59,14 @@ public sealed class XenoTailLashSystem : EntitySystem
             return;
 
         if (_transform.GetGrid(args.Target) is not { } gridId ||
-    !TryComp(gridId, out MapGridComponent? grid))
+            !TryComp(gridId, out MapGridComponent? grid))
             return;
 
         var direction = (args.Target.Position - _transform.GetMoverCoordinates(xeno).Position).Normalized().ToAngle() - Angle.FromDegrees(90);
 
         var xenoCoord = _transform.GetMoverCoordinates(xeno);
         var area = Box2.CenteredAround(xenoCoord.Position, new(xeno.Comp.Width, xeno.Comp.Height)).Translated(new(0, (xeno.Comp.Height / 2) + 0.5f));
-        var rot = new Box2Rotated(area, direction, xenoCoord.Position); // Correct the angle
+        var rot = new Box2Rotated(area, direction, xenoCoord.Position);
 
         bool valid = false;
 
@@ -72,7 +74,7 @@ public sealed class XenoTailLashSystem : EntitySystem
 
         foreach (var tile in _map.GetTilesIntersecting(gridId, grid, rot))
         {
-            if (!_interaction.InRangeUnobstructed(xeno.Owner, _turf.GetTileCenter(tile), xeno.Comp.Width * xeno.Comp.Height, collisionMask:CollisionGroup.MobMask)) //Range arbitiary, just needs to reach
+            if (!_interaction.InRangeUnobstructed(xeno.Owner, _turf.GetTileCenter(tile), xeno.Comp.Width * xeno.Comp.Height, collisionMask: CollisionGroup.MobMask))
                 continue;
 
             valid = true;
@@ -100,11 +102,14 @@ public sealed class XenoTailLashSystem : EntitySystem
             DuplicateCondition = DuplicateConditions.SameEvent
         };
 
-        _doAfter.TryStartDoAfter(ar);
+        if (_doAfter.TryStartDoAfter(ar))
+            _vulnerability.Start(xeno);
     }
 
     private void OnTailLashDoAfter(Entity<XenoTailLashComponent> xeno, ref XenoTailLashDoAfterEvent args)
     {
+        _vulnerability.Stop(xeno);
+
         if (args.Cancelled || args.Handled || xeno.Comp.Area == null || !_plasma.TryRemovePlasmaPopup(xeno.Owner, xeno.Comp.Cost))
         {
             xeno.Comp.Area = null;
@@ -125,7 +130,7 @@ public sealed class XenoTailLashSystem : EntitySystem
             if (!_xeno.CanAbilityAttackTarget(xeno, ent))
                 continue;
 
-            if (!_interaction.InRangeUnobstructed(xeno.Owner, ent.Owner, xeno.Comp.Width * xeno.Comp.Height, collisionMask: CollisionGroup.MobMask)) //Ditto
+            if (!_interaction.InRangeUnobstructed(xeno.Owner, ent.Owner, xeno.Comp.Width * xeno.Comp.Height, collisionMask: CollisionGroup.MobMask))
                 continue;
 
             if (_size.TryGetSize(ent, out var size) && size >= RMCSizes.Big)

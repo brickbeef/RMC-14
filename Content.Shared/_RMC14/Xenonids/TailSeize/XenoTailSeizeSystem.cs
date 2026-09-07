@@ -1,10 +1,12 @@
 using Content.Shared._RMC14.Damage.ObstacleSlamming;
 using Content.Shared._RMC14.Pulling;
+using Content.Shared._RMC14.Projectiles;
 using Content.Shared._RMC14.Slow;
 using Content.Shared._RMC14.Stun;
 using Content.Shared._RMC14.Xenonids.Hook;
 using Content.Shared._RMC14.Xenonids.Projectile;
 using Content.Shared.ActionBlocker;
+using Content.Shared.Interaction;
 using Content.Shared.Projectiles;
 using Content.Shared.Throwing;
 using Content.Shared.Weapons.Melee;
@@ -30,6 +32,7 @@ public sealed class XenoTailSeizeSystem : EntitySystem
     [Dependency] private readonly ActionBlockerSystem _actionBlocker = default!;
     [Dependency] private readonly RMCSizeStunSystem _size = default!;
     [Dependency] private readonly RMCObstacleSlammingSystem _obstacleSlamming = default!;
+    [Dependency] private readonly SharedInteractionSystem _interaction = default!;
 
     public override void Initialize()
     {
@@ -56,19 +59,26 @@ public sealed class XenoTailSeizeSystem : EntitySystem
         if (_net.IsClient || args.Shooter == null)
             return;
 
-        if (!_xeno.CanAbilityAttackTarget(args.Shooter.Value, args.Target))
+        var shooter = args.Shooter.Value;
+        if (!_xeno.CanAbilityAttackTarget(shooter, args.Target))
             return;
 
-        if (!TryComp<XenoHookComponent>(args.Shooter, out var hookComp))
+        if (!TryComp<XenoHookComponent>(shooter, out var hookComp))
             return;
 
-        if (!_hook.TryHookTarget((args.Shooter.Value, hookComp), args.Target))
+        if (!TryComp<ProjectileMaxRangeComponent>(hook.Owner, out var maxRange))
+            return;
+
+        if (!_interaction.InRangeUnobstructed(shooter, args.Target, maxRange.Max))
+            return;
+
+        if (!_hook.TryHookTarget((shooter, hookComp), args.Target))
             return;
 
         _pulling.TryStopAllPullsFromAndOn(args.Target);
 
-        var origin = _transform.GetMoverCoordinates(args.Shooter.Value);
-        var mapCoords = _transform.GetMapCoordinates(args.Shooter.Value);
+        var origin = _transform.GetMoverCoordinates(shooter);
+        var mapCoords = _transform.GetMapCoordinates(shooter);
         var target = _transform.GetMoverCoordinates(args.Target);
         if (!origin.TryDistance(EntityManager, target, out var dis))
             return;
