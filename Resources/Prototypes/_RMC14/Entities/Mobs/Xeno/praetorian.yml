@@ -39,6 +39,9 @@
     tier: 3
     hudOffset: -0.15,0.16
     unlockAt: 900 # 15 minutes
+  - type: XenoEvolutionCapped
+    id: CMXenoPraetorianBase
+    max: 6
   - type: XenoHeavy
   - type: XenoDevolve
     devolvesTo:
@@ -179,6 +182,9 @@
     name: rmc-xeno-valkyrie-name
     description: rmc-xeno-valkyrie-description
     popup: rmc-xeno-valkyrie-popup
+  - type: XenoEvolutionCapped
+    id: RMCXenoPraetorianValkyrie
+    max: 2
   - type: XenoPheromones
     pheromonesMultiplier: 3
     pheroSuffix: strong
@@ -254,6 +260,9 @@
     name: rmc-xeno-dancer-name
     description: rmc-xeno-dancer-description
     popup: rmc-xeno-dancer-popup
+  - type: XenoEvolutionCapped
+    id: RMCXenoPraetorianDancer
+    max: 2
   - type: CMArmor
     xenoArmor: 20
   - type: XenoClaws
@@ -304,6 +313,9 @@
     name: rmc-xeno-vanguard-name
     description: rmc-xeno-vanguard-description
     popup: rmc-xeno-vanguard-popup
+  - type: XenoEvolutionCapped
+    id: RMCXenoPraetorianVanguard
+    max: 2
   - type: XenoClaws
     clawType: Sharp
   - type: XenoShield
