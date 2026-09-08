@@ -6,8 +6,9 @@ using Robust.Shared.Prototypes;
 namespace Content.Shared._RMC14.Xenonids.Evolution;
 
 /// <summary>
-/// Enforces caste caps across both the base caste and its strains while
-/// retaining the existing per-strain XenoEvolutionCappedComponent limits.
+/// Provides cap checks for xeno evolution and strains. The actual UI/do-after
+/// handlers live in XenoEvolutionSystem so this system does not duplicate its
+/// BUI event subscriptions.
 /// </summary>
 public sealed class XenoEvolutionCapSystem : EntitySystem
 {
@@ -16,85 +17,30 @@ public sealed class XenoEvolutionCapSystem : EntitySystem
     [Dependency] private readonly SharedPopupSystem _popup = default!;
     [Dependency] private readonly IPrototypeManager _prototypes = default!;
 
-    private readonly Dictionary<EntityUid, List<(List<EntProtoId> List, EntProtoId Choice, int Index)>> _blockedEvolutions = new();
-    private readonly Dictionary<EntityUid, List<(EntProtoId Choice, int Index)>> _blockedStrains = new();
-
-    public override void Initialize()
+    public bool CanEvolve(Entity<XenoEvolutionComponent> xeno, EntProtoId choice)
     {
-        base.Initialize();
+        if (!IsAtOverallCap(xeno, choice))
+            return true;
 
-        SubscribeLocalEvent<XenoEvolutionComponent, XenoEvolveBuiMsg>(OnXenoEvolveBui, before: new[] { typeof(XenoEvolutionSystem) });
-        SubscribeLocalEvent<XenoEvolutionComponent, XenoEvolveBuiMsg>(OnXenoEvolveBuiAfter, after: new[] { typeof(XenoEvolutionSystem) });
-        SubscribeLocalEvent<XenoEvolutionComponent, XenoEvolutionDoAfterEvent>(OnXenoEvolutionDoAfter, before: new[] { typeof(XenoEvolutionSystem) });
-        SubscribeLocalEvent<XenoEvolutionComponent, XenoEvolutionDoAfterEvent>(OnXenoEvolutionDoAfterAfter, after: new[] { typeof(XenoEvolutionSystem) });
-        SubscribeLocalEvent<XenoEvolutionComponent, XenoStrainBuiMsg>(OnXenoStrainBui, before: new[] { typeof(XenoEvolutionSystem) });
-        SubscribeLocalEvent<XenoEvolutionComponent, XenoStrainBuiMsg>(OnXenoStrainBuiAfter, after: new[] { typeof(XenoEvolutionSystem) });
+        PopupCapReached(xeno, choice);
+        return false;
     }
 
-    private void OnXenoEvolveBui(Entity<XenoEvolutionComponent> xeno, ref XenoEvolveBuiMsg args)
+    public bool CanStrain(Entity<XenoEvolutionComponent> xeno, EntProtoId choice)
     {
-        if (!IsAtOverallCap(xeno, args.Choice))
-            return;
-
-        if (!TryBlockEvolution(xeno.Comp, args.Choice, out var blocked))
-            return;
-
-        AddBlocked(xeno.Owner, blocked);
-        PopupCapReached(xeno, args.Choice);
-    }
-
-    private void OnXenoEvolveBuiAfter(Entity<XenoEvolutionComponent> xeno, ref XenoEvolveBuiMsg args)
-    {
-        RestoreBlocked(xeno.Owner);
-    }
-
-    private void OnXenoEvolutionDoAfter(Entity<XenoEvolutionComponent> xeno, ref XenoEvolutionDoAfterEvent args)
-    {
-        if (!IsAtOverallCap(xeno, args.Choice))
-            return;
-
-        if (!TryBlockEvolution(xeno.Comp, args.Choice, out var blocked))
-            return;
-
-        AddBlocked(xeno.Owner, blocked);
-        PopupCapReached(xeno, args.Choice);
-    }
-
-    private void OnXenoEvolutionDoAfterAfter(Entity<XenoEvolutionComponent> xeno, ref XenoEvolutionDoAfterEvent args)
-    {
-        RestoreBlocked(xeno.Owner);
-    }
-
-    private void OnXenoStrainBui(Entity<XenoEvolutionComponent> xeno, ref XenoStrainBuiMsg args)
-    {
-        if (!IsAtStrainCap(xeno, args.Choice) && !IsAtOverallCap(xeno, args.Choice))
-            return;
-
-        var index = xeno.Comp.Strains.IndexOf(args.Choice);
-        if (index < 0)
-            return;
-
-        xeno.Comp.Strains.RemoveAt(index);
-        if (!_blockedStrains.TryGetValue(xeno.Owner, out var blocked))
+        if (IsAtStrainCap(xeno, choice))
         {
-            blocked = new();
-            _blockedStrains[xeno.Owner] = blocked;
+            PopupCapReached(xeno, choice);
+            return false;
         }
 
-        blocked.Add((args.Choice, index));
-        PopupCapReached(xeno, args.Choice);
-    }
-
-    private void OnXenoStrainBuiAfter(Entity<XenoEvolutionComponent> xeno, ref XenoStrainBuiMsg args)
-    {
-        if (!_blockedStrains.Remove(xeno.Owner, out var blocked))
-            return;
-
-        foreach (var (choice, index) in blocked.OrderByDescending(x => x.Index))
+        if (IsAtOverallCap(xeno, choice))
         {
-            var insert = Math.Min(index, xeno.Comp.Strains.Count);
-            xeno.Comp.Strains.Insert(insert, choice);
+            PopupCapReached(xeno, choice);
+            return false;
         }
+
+        return true;
     }
 
     private bool IsAtStrainCap(Entity<XenoEvolutionComponent> xeno, EntProtoId choice)
@@ -168,60 +114,6 @@ public sealed class XenoEvolutionCapSystem : EntitySystem
             {
                 ids.Add(cap.Id);
             }
-        }
-    }
-
-    private bool TryBlockEvolution(XenoEvolutionComponent comp, EntProtoId choice,
-        out (List<EntProtoId> List, EntProtoId Choice, int Index) blocked)
-    {
-        var index = comp.EvolvesTo.IndexOf(choice);
-        if (index >= 0)
-        {
-            comp.EvolvesTo.RemoveAt(index);
-            blocked = (comp.EvolvesTo, choice, index);
-            return true;
-        }
-
-        index = comp.EvolvesToWithoutPoints.IndexOf(choice);
-        if (index >= 0)
-        {
-            comp.EvolvesToWithoutPoints.RemoveAt(index);
-            blocked = (comp.EvolvesToWithoutPoints, choice, index);
-            return true;
-        }
-
-        index = comp.EarlyEvolvesTo.IndexOf(choice);
-        if (index >= 0)
-        {
-            comp.EarlyEvolvesTo.RemoveAt(index);
-            blocked = (comp.EarlyEvolvesTo, choice, index);
-            return true;
-        }
-
-        blocked = default;
-        return false;
-    }
-
-    private void AddBlocked(EntityUid uid, (List<EntProtoId> List, EntProtoId Choice, int Index) blocked)
-    {
-        if (!_blockedEvolutions.TryGetValue(uid, out var entries))
-        {
-            entries = new();
-            _blockedEvolutions[uid] = entries;
-        }
-
-        entries.Add(blocked);
-    }
-
-    private void RestoreBlocked(EntityUid uid)
-    {
-        if (!_blockedEvolutions.Remove(uid, out var blocked))
-            return;
-
-        foreach (var (list, choice, index) in blocked.OrderByDescending(x => x.Index))
-        {
-            if (!list.Contains(choice))
-                list.Insert(Math.Min(index, list.Count), choice);
         }
     }
 
