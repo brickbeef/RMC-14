@@ -1,3 +1,4 @@
+using System.Linq;
 using Content.Shared.Mobs.Systems;
 using Content.Shared.Popups;
 using Robust.Shared.Prototypes;
@@ -102,7 +103,19 @@ public sealed class XenoEvolutionCapSystem : EntitySystem
             !prototype.TryGetComponent(out XenoEvolutionCappedComponent? cap, _compFactory))
             return false;
 
-        return HasLiving<XenoEvolutionCappedComponent>(cap.Max, e => e.Comp.Id == cap.Id);
+        var living = 0;
+        var caps = EntityQueryEnumerator<XenoEvolutionCappedComponent>();
+        while (caps.MoveNext(out var uid, out var existingCap))
+        {
+            if (uid == xeno.Owner || _mobState.IsDead(uid) || existingCap.Id != cap.Id)
+                continue;
+
+            living++;
+            if (living >= cap.Max)
+                return true;
+        }
+
+        return false;
     }
 
     private bool IsAtOverallCap(Entity<XenoEvolutionComponent> xeno, EntProtoId choice)
