@@ -38,7 +38,7 @@ public sealed class XenoEvolutionCapSystem : EntitySystem
         if (!TryBlockEvolution(xeno.Comp, args.Choice, out var blocked))
             return;
 
-        AddBlocked(_blockedEvolutions, xeno.Owner, blocked);
+        AddBlocked(xeno.Owner, blocked);
         PopupCapReached(xeno, args.Choice);
     }
 
@@ -55,7 +55,7 @@ public sealed class XenoEvolutionCapSystem : EntitySystem
         if (!TryBlockEvolution(xeno.Comp, args.Choice, out var blocked))
             return;
 
-        AddBlocked(_blockedEvolutions, xeno.Owner, blocked);
+        AddBlocked(xeno.Owner, blocked);
         PopupCapReached(xeno, args.Choice);
     }
 
@@ -137,7 +137,7 @@ public sealed class XenoEvolutionCapSystem : EntitySystem
         var caps = EntityQueryEnumerator<XenoEvolutionCappedComponent>();
         while (caps.MoveNext(out var uid, out var cap) && living < overallCap.Max)
         {
-            if (_mobState.IsDead(uid) || !trackedIds.Contains(cap.Id))
+            if (uid == xeno.Owner || _mobState.IsDead(uid) || !trackedIds.Contains(cap.Id))
                 continue;
 
             living++;
