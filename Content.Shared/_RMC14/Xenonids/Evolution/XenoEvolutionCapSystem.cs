@@ -11,8 +11,6 @@ namespace Content.Shared._RMC14.Xenonids.Evolution;
 /// </summary>
 public sealed class XenoEvolutionCapSystem : EntitySystem
 {
-    private const int MaxPerStrain = 2;
-
     [Dependency] private readonly IComponentFactory _compFactory = default!;
     [Dependency] private readonly MobStateSystem _mobState = default!;
     [Dependency] private readonly SharedPopupSystem _popup = default!;
@@ -31,7 +29,7 @@ public sealed class XenoEvolutionCapSystem : EntitySystem
     {
         // A strain swap replaces the current Praetorian-family member rather
         // than adding one, so the six-member family cap must not prevent a
-        // swap. The target strain's two-member cap still applies.
+        // swap. The target strain's configured cap still applies.
         if (IsAtStrainCap(xeno, choice))
         {
             PopupCapReached(xeno, choice);
@@ -55,7 +53,7 @@ public sealed class XenoEvolutionCapSystem : EntitySystem
                 continue;
 
             living++;
-            if (living >= MaxPerStrain)
+            if (living >= cap.Max)
                 return true;
         }
 
