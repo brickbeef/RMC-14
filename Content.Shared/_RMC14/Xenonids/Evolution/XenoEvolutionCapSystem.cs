@@ -12,6 +12,8 @@ namespace Content.Shared._RMC14.Xenonids.Evolution;
 /// </summary>
 public sealed class XenoEvolutionCapSystem : EntitySystem
 {
+    private const int MaxPerStrain = 2;
+
     [Dependency] private readonly IComponentFactory _compFactory = default!;
     [Dependency] private readonly MobStateSystem _mobState = default!;
     [Dependency] private readonly SharedPopupSystem _popup = default!;
@@ -57,7 +59,7 @@ public sealed class XenoEvolutionCapSystem : EntitySystem
                 continue;
 
             living++;
-            if (living >= cap.Max)
+            if (living >= MaxPerStrain)
                 return true;
         }
 
