@@ -1,4 +1,3 @@
-using System.Linq;
 using Content.Shared.Mobs.Systems;
 using Content.Shared.Popups;
 using Robust.Shared.Prototypes;
@@ -30,13 +29,10 @@ public sealed class XenoEvolutionCapSystem : EntitySystem
 
     public bool CanStrain(Entity<XenoEvolutionComponent> xeno, EntProtoId choice)
     {
+        // A strain swap replaces the current Praetorian-family member rather
+        // than adding one, so the six-member family cap must not prevent a
+        // swap. The target strain's two-member cap still applies.
         if (IsAtStrainCap(xeno, choice))
-        {
-            PopupCapReached(xeno, choice);
-            return false;
-        }
-
-        if (IsAtOverallCap(xeno, choice))
         {
             PopupCapReached(xeno, choice);
             return false;
@@ -93,6 +89,9 @@ public sealed class XenoEvolutionCapSystem : EntitySystem
             // part of a strain group: their own cap is the overall cap.
             overallCap = choiceCap;
         }
+
+        if (overallCap == null)
+            return false;
 
         var trackedIds = new HashSet<EntProtoId> { overallCap.Id };
         trackedIds.UnionWith(strainIds);
