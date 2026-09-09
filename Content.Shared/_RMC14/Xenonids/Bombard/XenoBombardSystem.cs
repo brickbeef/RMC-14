@@ -1,6 +1,7 @@
 using System.Numerics;
 using Content.Shared._RMC14.Actions;
 using Content.Shared._RMC14.Projectiles;
+using Content.Shared._RMC14.Xenonids.AbilityVulnerability;
 using Content.Shared._RMC14.Xenonids.GasToggle;
 using Content.Shared._RMC14.Xenonids.Hive;
 using Content.Shared._RMC14.Xenonids.Plasma;
@@ -27,6 +28,7 @@ public sealed class XenoBombardSystem : EntitySystem
     [Dependency] private readonly RMCProjectileSystem _rmcProjectile = default!;
     [Dependency] private readonly SharedTransformSystem _transform = default!;
     [Dependency] private readonly XenoPlasmaSystem _xenoPlasma = default!;
+    [Dependency] private readonly XenoAbilityVulnerabilitySystem _vulnerability = default!;
 
     public override void Initialize()
     {
@@ -58,6 +60,7 @@ public sealed class XenoBombardSystem : EntitySystem
         var doAfter = new DoAfterArgs(EntityManager, ent, ent.Comp.Delay, ev, ent, args.Action) { BreakOnMove = true, RootEntity = true };
         if (_doAfter.TryStartDoAfter(doAfter))
         {
+            _vulnerability.Start(ent);
             _rmcActions.DisableSharedCooldownEvents(args.Action.Owner, ent);
 
             var selfMsg = Loc.GetString("rmc-glob-start-self");
@@ -89,6 +92,8 @@ public sealed class XenoBombardSystem : EntitySystem
 
     private void OnBombardDoAfter(Entity<XenoBombardComponent> ent, ref XenoBombardDoAfterEvent args)
     {
+        _vulnerability.Stop(ent);
+
         if (args.Target is not { } action)
             return;
         _rmcActions.EnableSharedCooldownEvents(action, ent);

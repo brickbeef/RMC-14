@@ -8,7 +8,7 @@ using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom;
 namespace Content.Shared._RMC14.Xenonids.Evolution;
 
 [RegisterComponent, NetworkedComponent, AutoGenerateComponentState(true), AutoGenerateComponentPause]
-[Access(typeof(XenoEvolutionSystem))]
+[Access(typeof(XenoEvolutionSystem), typeof(XenoEvolutionCapSystem))]
 public sealed partial class XenoEvolutionComponent : Component
 {
     [DataField, AutoNetworkedField]
