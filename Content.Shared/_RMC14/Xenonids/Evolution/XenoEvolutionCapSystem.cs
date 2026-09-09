@@ -85,9 +85,12 @@ public sealed class XenoEvolutionCapSystem : EntitySystem
             overallCap = currentCap;
             AddStrainCapIds(xeno.Comp.Strains, strainIds);
         }
-
-        if (overallCap == null)
-            return false;
+        else
+        {
+            // Preserve the original behavior for capped castes that are not
+            // part of a strain group: their own cap is the overall cap.
+            overallCap = choiceCap;
+        }
 
         var trackedIds = new HashSet<EntProtoId> { overallCap.Id };
         trackedIds.UnionWith(strainIds);
