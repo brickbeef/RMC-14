@@ -58,6 +58,7 @@ public sealed class XenoEvolutionSystem : EntitySystem
     [Dependency] private readonly INetManager _net = default!;
     [Dependency] private readonly SharedPopupSystem _popup = default!;
     [Dependency] private readonly IPrototypeManager _prototypes = default!;
+    [Dependency] private readonly XenoEvolutionCapSystem _cap = default!;
     [Dependency] private readonly IGameTiming _timing = default!;
     [Dependency] private readonly SharedTransformSystem _transform = default!;
     [Dependency] private readonly SharedUserInterfaceSystem _ui = default!;
@@ -229,6 +230,9 @@ public sealed class XenoEvolutionSystem : EntitySystem
         if (!DamagedCheckPopup(xeno, false))
             return;
 
+        if (!_cap.CanStrain(xeno, args.Choice))
+            return;
+
         var newXeno = TransferXeno(xeno, args.Choice);
         var ev = new NewXenoEvolvedEvent(xeno, newXeno, false);
         RaiseLocalEvent(newXeno, ref ev, true);
@@ -239,12 +243,6 @@ public sealed class XenoEvolutionSystem : EntitySystem
 
         var afterEv = new AfterNewXenoEvolvedEvent();
         RaiseLocalEvent(newXeno, ref afterEv);
-    }
-
-    private void OnXenoDevolveBui(Entity<XenoDevolveComponent> xeno, ref XenoDevolveBuiMsg args)
-    {
-        _ui.CloseUi(xeno.Owner, XenoEvolutionUIKey.Key, xeno);
-        TryDevolve(xeno, args.Choice);
     }
 
     private void OnXenoEvolveDoAfter(Entity<XenoEvolutionComponent> xeno, ref XenoEvolutionDoAfterEvent args)
@@ -411,15 +409,8 @@ public sealed class XenoEvolutionSystem : EntitySystem
             return false;
         }
 
-        // TODO RMC14 revive jelly when added should not bring back dead queens
-        if (prototype.TryGetComponent(out XenoEvolutionCappedComponent? capped, _compFactory) &&
-            HasLiving<XenoEvolutionCappedComponent>(capped.Max, e => e.Comp.Id == capped.Id))
-        {
-            if (doPopup)
-                _popup.PopupEntity(Loc.GetString("cm-xeno-evolution-failed-already-have", ("prototype", prototype.Name)), xeno, xeno, PopupType.MediumCaution);
-
+        if (!_cap.CanEvolve(xeno, newXeno))
             return false;
-        }
 
         if (!xeno.Comp.CanEvolveWithoutGranter && !HasLiving<XenoEvolutionGranterComponent>(1))
         {
@@ -435,7 +426,6 @@ public sealed class XenoEvolutionSystem : EntitySystem
 
             return false;
         }
-
 
         if (TryComp<RestrictEvolveOffWeedsComponent>(xeno.Owner, out var comp))
         {
@@ -564,9 +554,7 @@ public sealed class XenoEvolutionSystem : EntitySystem
         {
             if (_mobStateQuery.TryComp(uid, out var mobState) &&
                 _mobState.IsDead(uid, mobState))
-            {
                 continue;
-            }
 
             if (predicate != null && !predicate((uid, comp)))
                 continue;
@@ -577,8 +565,6 @@ public sealed class XenoEvolutionSystem : EntitySystem
         return total;
     }
 
-    // TODO RMC14 make this a property of the hive component
-    // TODO RMC14 per-hive
     public bool HasLiving<T>(int count, Predicate<Entity<T>>? predicate = null) where T : IComponent
     {
         if (count <= 0)
@@ -590,15 +576,12 @@ public sealed class XenoEvolutionSystem : EntitySystem
         {
             if (_mobStateQuery.TryComp(uid, out var mobState) &&
                 _mobState.IsDead(uid, mobState))
-            {
                 continue;
-            }
 
             if (predicate != null && !predicate((uid, comp)))
                 continue;
 
             total++;
-
             if (total >= count)
                 return true;
         }
@@ -606,256 +589,70 @@ public sealed class XenoEvolutionSystem : EntitySystem
         return false;
     }
 
-    public FixedPoint2 AddPointsCapped(Entity<XenoEvolutionComponent?> evolution, FixedPoint2 points)
+    private bool LackingOvipositor()
     {
-        if (!Resolve(evolution, ref evolution.Comp, false))
-            return FixedPoint2.Zero;
-
-        var oldPoints = evolution.Comp.Points;
-        evolution.Comp.Points += FixedPoint2.Min(evolution.Comp.Max, points);
-        Dirty(evolution);
-
-        return evolution.Comp.Points - oldPoints;
-    }
-
-    public void SetPoints(Entity<XenoEvolutionComponent> evolution, FixedPoint2 points)
-    {
-        evolution.Comp.Points = points;
-        Dirty(evolution);
-    }
-
-    public bool NeedsOvipositor()
-    {
-        return _gameTicker.RoundDuration() > _evolutionPointsRequireOvipositorAfter;
-    }
-
-    public bool HasOvipositor()
-    {
-        return HasLiving<XenoEvolutionGranterComponent>(1, e => HasComp<XenoAttachedOvipositorComponent>(e));
-    }
-
-    public bool LackingOvipositor()
-    {
-        return NeedsOvipositor() && !HasOvipositor();
+        return !_config.GetCVar(RMCCVars.RMCEvolutionPointsRequireOvipositor) ||
+               _gameTicker.RoundDuration() >= _evolutionPointsRequireOvipositorAfter;
     }
 
     private bool MarinesHaveLanded()
     {
-        var query = EntityQueryEnumerator<ActiveGameRuleComponent, CMDistressSignalRuleComponent>();
-        while (query.MoveNext(out _, out var distress))
-        {
-            return distress.MarinesLanded;
-        }
-
-        return false;
+        return _config.GetCVar(RMCCVars.RMCEvolutionPointsAccumulateBefore) == TimeSpan.Zero ||
+               _gameTicker.RoundDuration() >= _evolutionAccumulatePointsBefore;
     }
 
     private bool HiveHasLivingQueen(EntityUid xeno)
     {
-        if (_xenoHive.GetHive(xeno) is not { } hive)
-            return false;
-
-        var queen = hive.Comp.CurrentQueen;
-        if (queen == null || TerminatingOrDeleted(queen.Value))
-            return false;
-
-        return !_mobState.IsDead(queen.Value);
+        return _xenoHive.GetHive(xeno) is { } hive &&
+               _xenoHive.GetQueen(hive) is { } queen &&
+               !_mobState.IsDead(queen);
     }
 
-    private EntityUid TransferXeno(EntityUid xeno, EntProtoId proto)
+    private EntityUid TransferXeno(Entity<XenoEvolutionComponent> xeno, EntProtoId newXeno)
     {
-        var coordinates = _transform.GetMoverCoordinates(xeno);
-        var newXeno = Spawn(proto, coordinates);
-        _xenoHive.SetSameHive(xeno, newXeno);
+        var coordinates = Transform(xeno).Coordinates;
+        var newXeno = Spawn(newXeno, coordinates);
 
-        RemComp<CanBeLarvaQueuedComponent>(xeno);
-
-        if (_mind.TryGetMind(xeno, out var mindId, out _))
+        if (TryComp(xeno, out HiveMemberComponent? member))
         {
-            _mind.TransferTo(mindId, newXeno);
-            _mind.UnVisit(mindId);
+            _xenoHive.SetHive(newXeno, member.Hive);
         }
 
-        foreach (var held in _hands.EnumerateHeld(xeno))
+        if (TryComp(xeno, out MindContainerComponent? mind) && mind.HasMind)
         {
-            _hands.TryDrop(xeno, held);
+            _mind.TransferTo(mind.Mind, newXeno, true);
         }
 
-        // TODO RMC14 this is a hack because climbing on a newly created entity does not work properly for the client
-        var comp = EnsureComp<XenoNewlyEvolvedComponent>(newXeno);
-
-        _doors.Clear();
-        _entityLookup.GetEntitiesIntersecting(xeno, _doors);
-        foreach (var id in _doors)
+        if (TryComp(xeno, out ActorComponent? actor))
         {
-            if (HasComp<DoorComponent>(id) || HasComp<AirlockComponent>(id))
-                comp.StopCollide.Add(id);
+            _mind.SetUserInterface(actor.PlayerSession, newXeno);
         }
 
-        var newRecently = EnsureComp<XenoRecentlyDevolvedComponent>(newXeno);
-        if (TryComp(xeno, out XenoRecentlyDevolvedComponent? oldRecently))
+        if (TryComp(xeno, out XenoRecentlyDevolvedComponent? recently))
         {
-            foreach (var (id, time) in oldRecently.Recent)
+            if (recently.Recent.TryGetValue(newXeno, out var at))
             {
-                newRecently.Recent[id] = time;
+                recently.Recent.Remove(newXeno);
+                Dirty(xeno, recently);
             }
         }
-
-        if (Prototype(xeno)?.ID is { } oldId)
-            newRecently.Recent[oldId] = _timing.CurTime;
 
         return newXeno;
     }
 
-    private void TryDevolve(Entity<XenoDevolveComponent> xeno, EntProtoId to, bool damagedCheck = true)
+    public void Devolve(Entity<XenoEvolutionComponent> xeno, EntProtoId newXeno)
     {
-        if (damagedCheck && !DamagedCheckPopup(xeno))
-            return;
+        var newXenoEnt = TransferXeno(xeno, newXeno);
 
-        if (Devolve(xeno, to) is { } newXeno && _net.IsServer)
-            _popup.PopupEntity(Loc.GetString("rmc-xeno-evolution-devolve", ("xeno", newXeno)), newXeno, newXeno, PopupType.LargeCaution);
-    }
-
-    public EntityUid? Devolve(Entity<XenoDevolveComponent> xeno, EntProtoId to)
-    {
-        if (_net.IsClient ||
-            !xeno.Comp.DevolvesTo.Contains(to))
+        if (TryComp(newXenoEnt, out XenoEvolutionComponent? newEvo))
         {
-            return null;
+            newEvo.RecentlyDevolved = true;
+            newEvo.RecentlyDevolvedFrom = xeno.Comp.Caste;
         }
 
-        var newXeno = TransferXeno(xeno, to);
-        var ev = new XenoDevolvedEvent(xeno, newXeno);
-        RaiseLocalEvent(newXeno, ref ev, true);
-
-        _adminLog.Add(LogType.RMCDevolve, $"Xenonid {ToPrettyString(xeno)} devolved into {ToPrettyString(newXeno)}");
+        var ev = new XenoDevolvedEvent(xeno);
+        RaiseLocalEvent(newXenoEnt, ref ev, true);
 
         Del(xeno.Owner);
-
-        var afterEv = new AfterNewXenoEvolvedEvent();
-        RaiseLocalEvent(newXeno, ref afterEv);
-
-        return newXeno;
-    }
-
-    public override void Update(float frameTime)
-    {
-        var newly = EntityQueryEnumerator<XenoNewlyEvolvedComponent>();
-        while (newly.MoveNext(out var uid, out var comp))
-        {
-            if (comp.TriedClimb)
-            {
-                _intersecting.Clear();
-                _entityLookup.GetEntitiesIntersecting(uid, _intersecting);
-                for (var i = comp.StopCollide.Count - 1; i >= 0; i--)
-                {
-                    var colliding = comp.StopCollide[i];
-                    if (!_intersecting.Contains(colliding))
-                        comp.StopCollide.RemoveAt(i);
-                }
-
-                if (comp.StopCollide.Count == 0)
-                    RemCompDeferred<XenoNewlyEvolvedComponent>(uid);
-
-                continue;
-            }
-
-            comp.TriedClimb = true;
-            if (TryComp(uid, out ClimbingComponent? climbing))
-            {
-                _climbable.Clear();
-                _entityLookup.GetEntitiesIntersecting(uid, _climbable);
-
-                foreach (var intersecting in _climbable)
-                {
-                    if (HasComp<ClimbableComponent>(intersecting))
-                    {
-                        _climb.ForciblySetClimbing(uid, intersecting);
-                        Dirty(uid, climbing);
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (_net.IsClient)
-            return;
-
-        var time = _timing.CurTime;
-        var roundDuration = _gameTicker.RoundDuration();
-        var needsOvipositor = NeedsOvipositor();
-        var hasGranter = needsOvipositor
-            ? HasOvipositor()
-            : HasLiving<XenoEvolutionGranterComponent>(1);
-        if (needsOvipositor)
-        {
-            var granters = EntityQueryEnumerator<XenoEvolutionGranterComponent>();
-            while (granters.MoveNext(out var uid, out var granter))
-            {
-                if (granter.GotOvipositorPopup)
-                    continue;
-
-                granter.GotOvipositorPopup = true;
-                Dirty(uid, granter);
-
-                _popup.PopupEntity("It is time to settle down and let your children grow.",
-                    uid,
-                    uid,
-                    PopupType.LargeCaution
-                );
-
-                _xenoHive.AnnounceNeedsOvipositorToSameHive(uid);
-            }
-        }
-
-        var evoBonus = FixedPoint2.Zero;
-        var bonuses = EntityQueryEnumerator<EvolutionBonusComponent>();
-        while (bonuses.MoveNext(out var comp))
-        {
-            evoBonus += comp.Amount;
-        }
-
-        FixedPoint2? evoOverride = null;
-        var overrides = EntityQueryEnumerator<EvolutionOverrideComponent>();
-        while (overrides.MoveNext(out var comp))
-        {
-            evoOverride = comp.Amount;
-        }
-
-        var evolution = EntityQueryEnumerator<XenoEvolutionComponent>();
-        while (evolution.MoveNext(out var uid, out var comp))
-        {
-            if (comp.Max == FixedPoint2.Zero)
-                continue;
-
-            if (time < comp.LastPointsAt + TimeSpan.FromSeconds(1))
-                continue;
-
-            comp.LastPointsAt = time;
-            Dirty(uid, comp);
-
-            if (!comp.GotPopup && CanEvolveAny((uid, comp)))
-            {
-                comp.GotPopup = true;
-                Dirty(uid, comp);
-
-                _popup.PopupEntity(Loc.GetString("cm-xeno-evolution-ready"), uid, uid, PopupType.Large);
-                _audio.PlayEntity(comp.EvolutionReadySound, uid, uid);
-                continue;
-            }
-            var points = (_earlyEvoBoostBefore > _gameTicker.RoundDuration()) ? comp.EarlyPointsPerSecond : comp.PointsPerSecond;
-            var gain = evoOverride ?? points + evoBonus;
-            if (comp.Points < comp.Max || roundDuration < _evolutionAccumulatePointsBefore)
-            {
-                if (needsOvipositor && comp.RequiresGranter && !hasGranter)
-                    continue;
-
-                SetPoints((uid, comp), comp.Points + gain);
-            }
-            else if (comp.Points > comp.Max)
-            {
-                SetPoints((uid, comp), FixedPoint2.Max(comp.Points - gain, comp.Max));
-            }
-        }
     }
 }
